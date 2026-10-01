@@ -1,0 +1,30 @@
+{
+  "name": "cloudcli-plugin-agent-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CloudCLI tab plugin that shows running Claude Code processes, background subagents and shells, and stops them",
+  "keywords": [
+    "cloudcli",
+    "cloudcli-plugin",
+    "claude-code",
+    "subagents",
+    "monitoring"
+  ],
+  "homepage": "https://github.com/notetook/cloudcli-plugin-agent-monitor#readme",
+  "bugs": "https://github.com/notetook/cloudcli-plugin-agent-monitor/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/notetook/cloudcli-plugin-agent-monitor.git"
+  },
+  "license": "MIT",
+  "author": "notetook",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "preview": "node dev/preview.mjs",
+    "preview:mock": "node dev/preview.mjs --mock"
+  }
+}

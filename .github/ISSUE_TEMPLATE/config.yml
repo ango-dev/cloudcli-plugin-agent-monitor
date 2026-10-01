@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Problems with CloudCLI itself
+    url: https://github.com/siteboon/claudecodeui/issues
+    about: Issues with CloudCLI rather than this plugin belong in the CloudCLI repository.

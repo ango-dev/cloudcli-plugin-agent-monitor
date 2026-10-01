@@ -1,0 +1,67 @@
+name: Bug report
+description: The tab shows something wrong, misses something, or does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Transcripts, logs and screenshots can contain your prompts, file paths and command output, so remove anything private before you paste them. For security problems, see SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did the tab show, and what was actually running?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: The steps that lead to it, if you know them.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Agent Monitor version
+      description: Shown next to the plugin in Settings > Plugins.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: cloudcli-version
+    attributes:
+      label: CloudCLI UI version
+      placeholder: "1.37.3"
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: The output of `claude --version`.
+      placeholder: "2.1.280"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Node.js version
+      placeholder: "macOS 15, Node.js 22"
+    validations:
+      required: true
+  - type: textarea
+    id: transcript
+    attributes:
+      label: Transcript lines
+      description: For a wrong agent or turn state, the last few lines of the transcript involved, with anything private removed. Sessions are in `~/.claude/projects/<project>/<session>.jsonl`, agents in `<session>/subagents/agent-<id>.jsonl`.
+      render: json
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, or CloudCLI server log lines starting with `[Plugins]` or `[Plugin:agent-monitor]`.
