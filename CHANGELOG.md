@@ -2,6 +2,12 @@
 
 Notable changes to Agent Monitor. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The tab takes its colours, fonts (Geist and Geist Mono) and corner radius from the CloudCLI host's theme variables, with built-in fallbacks for hosts that lack them. Status colours were retuned to sit on those backgrounds in both themes.
+
 ## [0.1.0] - 2026-10-01
 
 First release.

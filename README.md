@@ -36,7 +36,7 @@ The screenshots show a staged demo in a real CloudCLI 1.37.3; [dev/demo](dev/dem
 - **Subagents**, nested under the agent that started them, with their current tool call, start time and last activity. Finished agents are one checkbox away.
 - **Shells** that Bash tool calls are running, marked as background work or as the tool call a thread is waiting on.
 - **Stop buttons** for a process or a single shell, with a second click to confirm.
-- Refreshes every 4 seconds while the tab is visible. Follows CloudCLI's light or dark theme and its language setting (English and Korean so far; other languages show English).
+- Refreshes every 4 seconds while the tab is visible. Follows CloudCLI's light or dark theme, using the host's colour variables, fonts and corner radius, and its language setting (English and Korean so far; other languages show English).
 - No dependencies, no build step, and nothing leaves your machine.
 
 ## Install
