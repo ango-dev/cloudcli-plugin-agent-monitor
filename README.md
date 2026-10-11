@@ -47,7 +47,7 @@ In CloudCLI, open **Settings > Plugins**, paste this URL and click **Install**:
 https://github.com/notetook/cloudcli-plugin-agent-monitor
 ```
 
-The **Agent Monitor** tab appears once the install finishes. Use **Pull latest from git** on the same page to update it, and **Uninstall plugin** to remove it.
+The **Agents** tab appears once the install finishes. Use **Pull latest from git** on the same page to update it, and **Uninstall plugin** to remove it.
 
 To install by hand instead, clone the repository into CloudCLI's plugin folder and reload CloudCLI in the browser:
 
@@ -121,7 +121,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
-**The tab does not appear.** Reload CloudCLI in the browser, then check that Agent Monitor is enabled in **Settings > Plugins**.
+**The tab does not appear.** Reload CloudCLI in the browser, then check that Agent Monitor (listed as **Agents**) is enabled in **Settings > Plugins**.
 
 **"Could not load status".** The text after the colon comes from the backend. If the backend does not start at all, CloudCLI's server log has the reason in lines starting with `[Plugins]` or `[Plugin:agent-monitor]`.
 

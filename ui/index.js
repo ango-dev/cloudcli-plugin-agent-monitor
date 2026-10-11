@@ -10,7 +10,7 @@ const FINISHED_KEY = 'agent-monitor:show-finished';
 const STRINGS = {
   en: {
     units: { s: 's', m: 'm', h: 'h', d: 'd' },
-    title: 'Agent Monitor',
+    title: 'Agents',
     subtitle: 'Claude Code processes with their background agents and shells',
     refresh: 'Refresh',
     showFinished: 'Show finished agents',
@@ -78,7 +78,7 @@ const STRINGS = {
   },
   ko: {
     units: { s: '초', m: '분', h: '시간', d: '일' },
-    title: '에이전트 모니터',
+    title: '에이전트',
     subtitle: 'Claude Code 프로세스와 그 백그라운드 에이전트, 셸',
     refresh: '새로고침',
     showFinished: '끝난 에이전트 보기',
@@ -151,19 +151,19 @@ const STRINGS = {
 // Status colours have no host variable apart from --destructive, so they are tuned here.
 const STYLE = `
 .am-root {
-  --am-bg: var(--background, 60 14% 99%);
-  --am-text: var(--foreground, 60 3% 8%);
+  --am-bg: var(--background, 60 14.3% 98.6%);
+  --am-text: var(--foreground, 60 2.6% 7.6%);
   --am-surface: var(--card, 0 0% 100%);
-  --am-subtle: var(--muted, 60 3% 94%);
-  --am-muted: var(--muted-foreground, 50 3% 41%);
-  --am-hover: var(--accent, 48 12% 92%);
-  --am-border: var(--border, 60 2% 88%);
-  --am-input: var(--input, 60 2% 87%);
-  --am-ring: var(--ring, 15 56% 52%);
-  --am-primary: var(--primary, 15 58% 43%);
-  --am-danger: var(--destructive, 4 59% 44%);
+  --am-subtle: var(--muted, 60 3.2% 93.9%);
+  --am-muted: var(--muted-foreground, 50 2.9% 40.8%);
+  --am-hover: var(--accent, 48 12.2% 92%);
+  --am-border: var(--border, 60 1.7% 88.4%);
+  --am-input: var(--input, 60 1.5% 87.3%);
+  --am-ring: var(--ring, 15.1 55.6% 52.4%);
+  --am-primary: var(--primary, 15.5 58.2% 43.1%);
+  --am-danger: var(--destructive, 4.1 59.1% 44.1%);
   --am-on-danger: var(--destructive-foreground, 0 0% 100%);
-  --am-info: var(--link, 218 61% 44%);
+  --am-info: var(--link, 218.4 61.3% 43.5%);
   --am-success: 145 63% 28%;
   --am-warning: 32 92% 33%;
   --am-radius: var(--radius, 0.625rem);
@@ -172,65 +172,79 @@ const STYLE = `
   box-sizing: border-box;
   height: 100%;
   overflow: auto;
-  padding: 16px 20px 32px;
   background: hsl(var(--am-bg));
   color: hsl(var(--am-text));
   font: 13px/1.5 var(--am-sans);
 }
 .am-root.am-dark {
-  --am-bg: var(--background, 0 0% 8%);
-  --am-text: var(--foreground, 45 12% 93%);
-  --am-surface: var(--card, 60 2% 12%);
-  --am-subtle: var(--muted, 0 0% 13%);
-  --am-muted: var(--muted-foreground, 45 4% 56%);
-  --am-hover: var(--accent, 0 1% 17%);
-  --am-border: var(--border, 30 2% 18%);
-  --am-input: var(--input, 30 2% 21%);
-  --am-ring: var(--ring, 15 65% 63%);
-  --am-primary: var(--primary, 15 65% 63%);
-  --am-danger: var(--destructive, 10 72% 67%);
-  --am-on-danger: var(--destructive-foreground, 40 6% 10%);
-  --am-info: var(--link, 217 89% 76%);
+  --am-bg: var(--background, 0 0% 8.2%);
+  --am-text: var(--foreground, 45 11.8% 93.3%);
+  --am-surface: var(--card, 60 1.6% 12.4%);
+  --am-subtle: var(--muted, 0 0% 12.9%);
+  --am-muted: var(--muted-foreground, 45 3.6% 56.1%);
+  --am-hover: var(--accent, 0 1.2% 16.7%);
+  --am-border: var(--border, 0 1.2% 15.9%);
+  --am-input: var(--input, 30 1.9% 21.2%);
+  --am-ring: var(--ring, 15.2 64.9% 63.1%);
+  --am-primary: var(--primary, 15.2 64.9% 63.1%);
+  --am-danger: var(--destructive, 9.9 72.5% 67.3%);
+  --am-on-danger: var(--destructive-foreground, 40 5.7% 10.4%);
+  --am-info: var(--link, 217.1 88.7% 75.7%);
   --am-success: 142 42% 56%;
   --am-warning: 36 72% 60%;
 }
 .am-root *, .am-root *::before, .am-root *::after { box-sizing: border-box; }
-.am-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.am-header h2 { margin: 0; font-size: 16px; font-weight: 600; }
-.am-header p { margin: 2px 0 0; color: hsl(var(--am-muted)); }
-.am-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.am-toggle { display: inline-flex; align-items: center; gap: 6px; color: hsl(var(--am-muted)); cursor: pointer; user-select: none; }
-.am-toggle input { accent-color: hsl(var(--am-primary)); }
+.am-top { position: sticky; top: 0; z-index: 1; background: hsl(var(--am-bg)); }
+.am-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid hsl(var(--am-border) / 0.6); }
+.am-heading { min-width: 0; }
+.am-title-row { display: flex; align-items: center; gap: 8px; }
+.am-title-row svg { flex: none; width: 16px; height: 16px; color: hsl(var(--am-primary)); }
+.am-header h2 { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
+.am-header p { margin: 2px 0 0; color: hsl(var(--am-muted)); font-size: 12px; }
+.am-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.am-toggle { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; color: hsl(var(--am-muted)); font-size: 12px; cursor: pointer; user-select: none; }
+.am-toggle input { margin: 0; accent-color: hsl(var(--am-primary)); }
 .am-btn {
-  appearance: none; border: 1px solid hsl(var(--am-input)); background: hsl(var(--am-surface)); color: hsl(var(--am-text));
-  border-radius: calc(var(--am-radius) - 4px); padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid hsl(var(--am-input)); background: hsl(var(--am-bg)); color: hsl(var(--am-text));
+  border-radius: calc(var(--am-radius) - 2px); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
 }
 .am-btn:hover { background: hsl(var(--am-hover)); }
-.am-btn:focus-visible, .am-toggle input:focus-visible { outline: 2px solid hsl(var(--am-ring)); outline-offset: 2px; }
-.am-btn:disabled { opacity: 0.6; cursor: default; }
+.am-btn:focus-visible, .am-toggle input:focus-visible { outline: none; box-shadow: 0 0 0 1px hsl(var(--am-ring)); }
+.am-btn:disabled { opacity: 0.5; cursor: default; }
+.am-btn-icon { width: 28px; padding: 0; border-color: transparent; background: transparent; }
+.am-btn-icon svg { width: 14px; height: 14px; }
+.am-refreshing .am-btn-icon svg { animation: am-spin 0.8s linear infinite; }
 .am-btn-danger { color: hsl(var(--am-danger)); }
-.am-btn-confirm { background: hsl(var(--am-danger)); border-color: hsl(var(--am-danger)); color: hsl(var(--am-on-danger)); }
-.am-btn-confirm:hover { background: hsl(var(--am-danger)); filter: brightness(1.1); }
-.am-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
-.am-chip { border: 1px solid hsl(var(--am-border)); border-radius: 999px; padding: 2px 10px; color: hsl(var(--am-muted)); background: hsl(var(--am-surface)); }
-.am-chip b { color: hsl(var(--am-text)); font-weight: 600; margin-left: 4px; }
-.am-chip-hot b { color: hsl(var(--am-warning)); }
-.am-updated { color: hsl(var(--am-muted)); font-size: 12px; margin-left: auto; }
-.am-banner { border-radius: calc(var(--am-radius) - 2px); padding: 8px 12px; margin-bottom: 12px; border: 1px solid hsl(var(--am-border)); background: hsl(var(--am-subtle)); }
-.am-banner-error { border-color: hsl(var(--am-danger)); color: hsl(var(--am-danger)); }
-.am-banner-ok { border-color: hsl(var(--am-success)); color: hsl(var(--am-success)); }
+.am-btn-confirm { background: hsl(var(--am-danger)); border-color: transparent; color: hsl(var(--am-on-danger)); }
+.am-btn-confirm:hover { background: hsl(var(--am-danger) / 0.9); }
+.am-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 16px; font-size: 12px; color: hsl(var(--am-muted));
+  border-bottom: 1px solid hsl(var(--am-border) / 0.6); background: linear-gradient(hsl(var(--am-subtle) / 0.2), hsl(var(--am-subtle) / 0.2)) hsl(var(--am-bg));
+}
+.am-stat b { color: hsl(var(--am-text)); font-weight: 600; margin-left: 4px; }
+.am-stat-hot b { color: hsl(var(--am-warning)); }
+.am-updated { margin-left: auto; }
+.am-banner { padding: 8px 16px; border-bottom: 1px solid hsl(var(--am-tone) / 0.2); background: linear-gradient(hsl(var(--am-tone) / 0.1), hsl(var(--am-tone) / 0.1)) hsl(var(--am-bg)); color: hsl(var(--am-tone)); }
+.am-banner-error { --am-tone: var(--am-danger); }
+.am-banner-ok { --am-tone: var(--am-success); }
+.am-content { padding: 12px 16px 32px; }
 .am-empty { text-align: center; padding: 48px 16px; color: hsl(var(--am-muted)); }
-.am-empty strong { display: block; color: hsl(var(--am-text)); font-size: 14px; margin-bottom: 4px; }
+.am-empty strong { display: block; color: hsl(var(--am-text)); font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .am-card { border: 1px solid hsl(var(--am-border)); border-radius: var(--am-radius); background: hsl(var(--am-surface)); padding: 12px 14px; margin-bottom: 12px; }
 .am-card.am-status-background { border-left: 3px solid hsl(var(--am-warning)); }
 .am-card.am-status-working { border-left: 3px solid hsl(var(--am-info)); }
 .am-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .am-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .am-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
-.am-badge { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; white-space: nowrap; }
-.am-badge-working { color: hsl(var(--am-info)); }
-.am-badge-background { color: hsl(var(--am-warning)); }
-.am-badge-idle { color: hsl(var(--am-muted)); }
+.am-badge {
+  display: inline-flex; align-items: center; border-radius: calc(var(--am-radius) - 2px); padding: 0 6px; line-height: 18px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  border: 1px solid hsl(var(--am-tone) / 0.3); background: hsl(var(--am-tone) / 0.08); color: hsl(var(--am-tone));
+}
+.am-badge-working { --am-tone: var(--am-info); }
+.am-badge-background { --am-tone: var(--am-warning); }
+.am-badge-idle { border-color: hsl(var(--am-input)); background: hsl(var(--am-subtle)); color: hsl(var(--am-muted)); }
 .am-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: hsl(var(--am-muted)); margin-top: 4px; font-size: 12px; }
 .am-meta .am-strong { color: hsl(var(--am-text)); }
 .am-mono { font-family: var(--am-mono); font-size: 11.5px; }
@@ -238,8 +252,8 @@ const STYLE = `
 .am-warn { color: hsl(var(--am-warning)); font-size: 12px; margin-top: 6px; }
 .am-prompt { margin-top: 6px; color: hsl(var(--am-muted)); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .am-prompt b { color: hsl(var(--am-text)); font-weight: 500; margin-right: 6px; }
-.am-section { margin-top: 10px; border-top: 1px dashed hsl(var(--am-border)); padding-top: 8px; }
-.am-section-title { font-size: 12px; font-weight: 600; color: hsl(var(--am-muted)); text-transform: uppercase; letter-spacing: 0.04em; display: flex; gap: 8px; align-items: baseline; }
+.am-section { margin-top: 10px; border-top: 1px solid hsl(var(--am-border)); padding-top: 8px; }
+.am-section-title { font-size: 12px; font-weight: 500; color: hsl(var(--am-muted)); text-transform: uppercase; letter-spacing: 0.04em; display: flex; gap: 8px; align-items: baseline; }
 .am-section-title span { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .am-list { list-style: none; margin: 6px 0 0; padding: 0; }
 .am-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
@@ -252,21 +266,28 @@ const STYLE = `
 .am-activity { color: hsl(var(--am-text)); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .am-activity code, .am-cmd { font-family: var(--am-mono); font-size: 11.5px; }
 .am-cmd { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.am-tag { font-size: 11px; color: hsl(var(--am-muted)); border: 1px solid hsl(var(--am-border)); border-radius: calc(var(--am-radius) - 6px); padding: 0 5px; white-space: nowrap; }
-.am-tag-bg { color: hsl(var(--am-warning)); border-color: currentColor; }
+.am-tag { font-size: 10.5px; line-height: 16px; color: hsl(var(--am-muted)); border: 1px solid hsl(var(--am-border)); background: hsl(var(--am-bg)); border-radius: calc(var(--am-radius) - 4px); padding: 0 5px; white-space: nowrap; }
+.am-tag-bg { color: hsl(var(--am-warning)); border-color: hsl(var(--am-warning) / 0.4); }
 .am-quiet { color: hsl(var(--am-warning)); }
 .am-now { margin-top: 6px; flex-wrap: nowrap; }
 .am-label { flex: none; font-size: 11px; color: hsl(var(--am-muted)); text-transform: uppercase; letter-spacing: 0.04em; }
-.am-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: hsl(var(--am-muted)); }
+.am-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; margin: 7px 1px 0; background: hsl(var(--am-muted) / 0.5); }
 .am-state-running .am-dot, .am-dot-shell { background: hsl(var(--am-success)); box-shadow: 0 0 0 0 hsl(var(--am-success)); animation: am-pulse 1.8s ease-out infinite; }
-.am-state-completed .am-dot { background: hsl(var(--am-muted)); }
+.am-state-completed .am-dot { background: hsl(var(--am-muted) / 0.5); }
 .am-state-failed .am-dot { background: hsl(var(--am-danger)); }
 .am-state-interrupted .am-dot, .am-state-killed .am-dot, .am-state-stopped .am-dot { background: hsl(var(--am-warning)); }
 .am-state-done .am-desc { color: hsl(var(--am-muted)); font-weight: 400; }
 .am-children { border-left: 1px solid hsl(var(--am-border)); margin-left: 3px; padding-left: 12px; }
-@keyframes am-pulse { 0% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0.45); } 70% { box-shadow: 0 0 0 6px hsl(var(--am-success) / 0); } 100% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0); } }
-@media (prefers-reduced-motion: reduce) { .am-state-running .am-dot, .am-dot-shell { animation: none; } }
+@keyframes am-pulse { 0% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0.45); } 70% { box-shadow: 0 0 0 5px hsl(var(--am-success) / 0); } 100% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0); } }
+@keyframes am-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .am-state-running .am-dot, .am-dot-shell, .am-refreshing .am-btn-icon svg { animation: none; } }
 `;
+
+// Lucide icons, drawn inline so the tab makes no requests of its own. ACTIVITY_ICON matches icon.svg.
+const ACTIVITY_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 20 9 4 6 12 2 12"/></svg>';
+const REFRESH_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
 
 /** CloudCLI's language setting (or the browser's), matched to a STRINGS block. */
 function detectLanguage() {
@@ -510,38 +531,39 @@ function render(view) {
   const theme = view.api.context?.theme ?? (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
   view.root.classList.toggle('am-dark', theme === 'dark');
 
-  const parts = [];
-  parts.push(`
+  const top = [];
+  top.push(`
     <header class="am-header">
-      <div>
-        <h2>${escapeHtml(t.title)}</h2>
+      <div class="am-heading">
+        <div class="am-title-row">${ACTIVITY_ICON}<h2>${escapeHtml(t.title)}</h2></div>
         <p>${escapeHtml(t.subtitle)}</p>
       </div>
       <div class="am-actions">
         <label class="am-toggle"><input type="checkbox" data-action="toggle-finished" ${state.showFinished ? 'checked' : ''}>${escapeHtml(t.showFinished)}</label>
-        <button type="button" class="am-btn" data-action="refresh">${escapeHtml(t.refresh)}</button>
+        <button type="button" class="am-btn am-btn-icon" data-action="refresh" title="${escapeHtml(t.refresh)}" aria-label="${escapeHtml(t.refresh)}">${REFRESH_ICON}</button>
       </div>
     </header>`);
 
   if (data?.supported) {
     const s = data.summary;
-    parts.push(`
+    top.push(`
       <div class="am-summary">
-        <span class="am-chip">${escapeHtml(t.chipProcesses)}<b>${s.processes}</b></span>
-        <span class="am-chip ${s.background ? 'am-chip-hot' : ''}">${escapeHtml(t.chipBackground)}<b>${s.background}</b></span>
-        <span class="am-chip">${escapeHtml(t.chipAgents)}<b>${s.runningAgents}</b></span>
-        <span class="am-chip">${escapeHtml(t.chipShells)}<b>${s.shells}</b></span>
+        <span class="am-stat">${escapeHtml(t.chipProcesses)}<b>${s.processes}</b></span>
+        <span class="am-stat ${s.background ? 'am-stat-hot' : ''}">${escapeHtml(t.chipBackground)}<b>${s.background}</b></span>
+        <span class="am-stat">${escapeHtml(t.chipAgents)}<b>${s.runningAgents}</b></span>
+        <span class="am-stat">${escapeHtml(t.chipShells)}<b>${s.shells}</b></span>
         ${state.fetchedAt ? `<span class="am-updated">${escapeHtml(t.updated(duration(view.now - state.fetchedAt, t)))}</span>` : ''}
       </div>`);
   }
 
   if (state.notice) {
-    parts.push(`<div class="am-banner am-banner-${state.notice.type}" role="status">${escapeHtml(state.notice.text)}</div>`);
+    top.push(`<div class="am-banner am-banner-${state.notice.type}" role="status">${escapeHtml(state.notice.text)}</div>`);
   }
   if (state.error) {
-    parts.push(`<div class="am-banner am-banner-error" role="alert">${escapeHtml(t.loadFailed(state.error))}</div>`);
+    top.push(`<div class="am-banner am-banner-error" role="alert">${escapeHtml(t.loadFailed(state.error))}</div>`);
   }
 
+  const parts = [];
   if (!data) {
     if (!state.error) parts.push(`<div class="am-empty">${escapeHtml(t.loading)}</div>`);
   } else if (!data.supported) {
@@ -552,7 +574,7 @@ function render(view) {
     for (const proc of data.processes) parts.push(processCard(view, proc, data.home));
   }
 
-  const html = parts.join('');
+  const html = `<div class="am-top">${top.join('')}</div><div class="am-content">${parts.join('')}</div>`;
   if (html !== view.lastHtml) {
     view.body.innerHTML = html;
     view.lastHtml = html;
@@ -674,7 +696,10 @@ export function mount(container, api) {
   view.onClick = (event) => {
     const target = event.target.closest('[data-action]');
     if (!target || !root.contains(target)) return;
-    if (target.dataset.action === 'refresh') refresh(view);
+    if (target.dataset.action === 'refresh') {
+      root.classList.add('am-refreshing');
+      refresh(view).finally(() => root.classList.remove('am-refreshing'));
+    }
     else if (target.dataset.action === 'stop') onStop(view, target.dataset.kind, Number(target.dataset.pid));
   };
   view.onChange = (event) => {

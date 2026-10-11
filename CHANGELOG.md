@@ -7,6 +7,9 @@ Notable changes to Agent Monitor. The format follows [Keep a Changelog](https://
 ### Changed
 
 - The tab takes its colours, fonts (Geist and Geist Mono) and corner radius from the CloudCLI host's theme variables, with built-in fallbacks for hosts that lack them. Status colours were retuned to sit on those backgrounds in both themes.
+- The tab is called **Agents** in CloudCLI's tab bar and in its own header.
+- The header is laid out like CloudCLI's built-in Browser tab: a bar with the tab's icon, title and subtitle, an icon-only refresh button, and a strip below it with the counts and the last update. It stays in place while the list scrolls, and notices appear under it as full-width bars.
+- Fallback colours match the host theme's exact values, including its new dark border colour, and badges, buttons and dividers follow the host's shapes.
 
 ## [0.1.0] - 2026-10-01
 

@@ -1,6 +1,6 @@
 {
   "name": "agent-monitor",
-  "displayName": "Agent Monitor",
+  "displayName": "Agents",
   "version": "0.1.0",
   "description": "See which Claude Code processes, background subagents and shells are still running, and stop them.",
   "author": "notetook",
