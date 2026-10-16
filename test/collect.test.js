@@ -133,7 +133,8 @@ test('snapshot attributes agents and shells to the process that runs them', asyn
     assert.equal(snapshot.supported, true);
     assert.equal(snapshot.home, '/h');
     assert.deepEqual(snapshot.processes.map((proc) => [proc.pid, proc.status]), [[P1.pid, 'background'], [P2.pid, 'working']]);
-    assert.deepEqual(snapshot.summary, { processes: 2, background: 1, working: 1, runningAgents: 5, shells: 4 });
+    assert.deepEqual(snapshot.summary, { processes: 2, background: 1, working: 1, runningAgents: 5, workflows: 0, shells: 4 });
+    assert.deepEqual(snapshot.processes.map((proc) => proc.workflows), [[], []]);
 
     const [old, current] = snapshot.processes;
 
@@ -211,6 +212,137 @@ test('a session whose turn has ended shows its background work', async () => {
     // a4 started before the only live process: it is not running anywhere now.
     assert.equal(proc.agents.some((agent) => agent.id === 'a4'), false);
     assert.equal(proc.shells.every((item) => item.background || item.agentId), true);
+  } finally {
+    fs.rmSync(configDir, { recursive: true, force: true });
+  }
+});
+
+// A Workflow run as Claude Code writes it: agent transcripts and a journal under
+// <session>/subagents/workflows/<runId>/, and the script under <session>/workflows/scripts/.
+function addWorkflow(configDir, runId, name, { journal, agents, mtimeMs }) {
+  const sessionDir = path.join(configDir, 'projects', '-work-demo', SESSION);
+  const runDir = path.join(sessionDir, 'subagents', 'workflows', runId);
+  for (const [id, entries, agentMtime] of agents) writeJsonl(path.join(runDir, `agent-${id}.jsonl`), entries, agentMtime ?? mtimeMs);
+  writeJsonl(path.join(runDir, 'journal.jsonl'), journal);
+  fs.mkdirSync(path.join(sessionDir, 'workflows', 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(sessionDir, 'workflows', 'scripts', `${name}-${runId}.js`), 'export const meta = {}');
+}
+
+// The main turn has launched a workflow in the background and ended.
+function endMainTurn(configDir) {
+  const transcript = path.join(configDir, 'projects', '-work-demo', `${SESSION}.jsonl`);
+  fs.appendFileSync(transcript, `${JSON.stringify({ type: 'user', timestamp: iso(NOW - 2_000), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'main-1', content: 'ok' }] } })}\n`);
+  fs.appendFileSync(transcript, `${JSON.stringify(text('m10', 'The workflow is running.', 'end_turn', NOW - 1_000))}\n`);
+  return transcript;
+}
+
+const onlyP2 = (extra = []) => [...processList().filter((proc) => proc.pid !== P1.pid && proc.ppid !== P1.pid && proc.pid !== 3001), ...extra];
+const RUN = 'wf_6a245a5e-1d3';
+
+function buildWorkflowFixture() {
+  const configDir = buildFixture();
+  // Only the workflow is left running: drop the plain agents that still run.
+  const subagents = path.join(configDir, 'projects', '-work-demo', SESSION, 'subagents');
+  for (const id of ['a1', 'a3', 'a7', 'a8']) fs.rmSync(path.join(subagents, `agent-${id}.jsonl`));
+  endMainTurn(configDir);
+  addWorkflow(configDir, RUN, 'draft-x1-x2-prompts', {
+    mtimeMs: NOW - 3_000,
+    journal: [
+      { type: 'started', agentId: 'w1', label: 'draft:X1', phase: 'Draft' },
+      { type: 'started', agentId: 'w2', label: 'draft:X2', phase: 'Draft' },
+      { type: 'started', agentId: 'w3', label: 'check:X1:0', phase: 'Check' },
+      { type: 'result', agentId: 'w1', result: 'written', timestamp: iso(NOW - 40_000) },
+      { type: 'started', agentId: 'w4', label: 'check:X1:1', phase: 'Check' },
+    ],
+    agents: [
+      ['w1', [prompt('Draft X1', P2.start + 10_000), text('y1', 'written', 'end_turn', NOW - 40_000)], NOW - 40_000],
+      ['w2', [prompt('Draft X2', P2.start + 11_000), call('y2', 'u2', 'Bash', { command: 'grep -n p_off alerts.py' }, NOW - 3_000)]],
+      ['w3', [prompt('Check X1', P2.start + 50_000), call('y3', 'u3', 'Read', { file_path: '/work/demo/plan.md' }, NOW - 4_000)]],
+    ],
+  });
+  // A run from before the live process started: not running anywhere now.
+  addWorkflow(configDir, 'wf_old', 'old-run', {
+    mtimeMs: P2.start - 60_000,
+    journal: [{ type: 'started', agentId: 'o1', label: 'old' }],
+    agents: [['o1', [prompt('old', P2.start - 90_000)]]],
+  });
+  return configDir;
+}
+
+test('a session running a workflow is in the background, with the workflow and its agents', async () => {
+  const configDir = buildWorkflowFixture();
+  try {
+    const grep = shell(3010, P2.pid, 'grep -n p_off alerts.py', NOW - 3_000);
+    const snapshot = await collector(configDir, { listProcesses: async () => onlyP2([grep]) }).snapshot({ now: NOW });
+    const [proc] = snapshot.processes;
+    assert.equal(proc.turn.state, 'done');
+    assert.equal(proc.status, 'background');
+    assert.deepEqual(proc.agents, []);
+    assert.equal(snapshot.summary.workflows, 1);
+    assert.equal(snapshot.summary.runningAgents, 2);
+
+    assert.equal(proc.workflows.length, 1);
+    const [run] = proc.workflows;
+    assert.equal(run.runId, RUN);
+    assert.equal(run.name, 'draft-x1-x2-prompts');
+    assert.equal(run.state, 'running');
+    // w4 is in the journal but has not written its transcript yet.
+    assert.equal(run.agentCount, 4);
+    assert.equal(run.finishedCount, 1);
+    assert.deepEqual(
+      run.agents.map((agent) => [agent.id, agent.description, agent.phase, agent.state]),
+      [['w2', 'draft:X2', 'Draft', 'running'], ['w3', 'check:X1:0', 'Check', 'running']],
+    );
+    assert.deepEqual(run.agents[0].activity, { kind: 'tool', tools: [{ name: 'Bash', detail: 'grep -n p_off alerts.py' }] });
+
+    // The shell is the tool call of a workflow agent, not background work of its own.
+    assert.deepEqual(proc.shells.find((item) => item.pid === 3010), {
+      pid: 3010, pgid: 3010, startedAt: NOW - 3_000, cpu: 0, command: 'grep -n p_off alerts.py', background: false, agentId: 'w2', taskId: null,
+    });
+
+    const withFinished = await collector(configDir, { listProcesses: async () => onlyP2() }).snapshot({ now: NOW, includeFinished: true });
+    const shown = withFinished.processes[0].workflows[0].agents;
+    assert.deepEqual(shown.map((agent) => [agent.id, agent.state, agent.endedAt]), [['w1', 'completed', NOW - 40_000], ['w2', 'running', null], ['w3', 'running', null]]);
+  } finally {
+    fs.rmSync(configDir, { recursive: true, force: true });
+  }
+});
+
+test('a workflow ends with its task notification, or once every agent has settled and it stays quiet', async () => {
+  const configDir = buildWorkflowFixture();
+  try {
+    const transcript = path.join(configDir, 'projects', '-work-demo', `${SESSION}.jsonl`);
+    fs.appendFileSync(transcript, `${JSON.stringify(notification(RUN, 'killed', NOW - 1_000))}\n`);
+    let snapshot = await collector(configDir, { listProcesses: async () => onlyP2() }).snapshot({ now: NOW, includeFinished: true });
+    let [proc] = snapshot.processes;
+    assert.equal(proc.status, 'background'); // sleep 100 still runs in the background
+    assert.equal(proc.finishedWorkflowCount, 1);
+    let [run] = proc.workflows;
+    assert.equal(run.state, 'killed');
+    assert.deepEqual(run.agents.map((agent) => [agent.id, agent.state]), [['w1', 'completed'], ['w2', 'killed'], ['w3', 'killed']]);
+
+    // Without a notification: every agent finished, then nothing for over a minute.
+    const quiet = buildWorkflowFixture();
+    try {
+      const runDir = path.join(quiet, 'projects', '-work-demo', SESSION, 'subagents', 'workflows', RUN);
+      fs.appendFileSync(path.join(runDir, 'journal.jsonl'), ['w2', 'w3'].map((agentId) => JSON.stringify({ type: 'result', agentId })).join('\n') + '\n');
+      const later = NOW + 120_000;
+      // w4 has started but not written its transcript yet: the run is not over.
+      snapshot = await collector(quiet, { listProcesses: async () => onlyP2() }).snapshot({ now: later });
+      assert.equal(snapshot.processes[0].workflows[0].state, 'running');
+      fs.appendFileSync(path.join(runDir, 'journal.jsonl'), `${JSON.stringify({ type: 'result', agentId: 'w4' })}\n`);
+      snapshot = await collector(quiet, { listProcesses: async () => onlyP2() }).snapshot({ now: later });
+      [proc] = snapshot.processes;
+      assert.deepEqual(proc.workflows, []);
+      assert.equal(proc.finishedWorkflowCount, 1);
+      // Between phases, the run is still running.
+      snapshot = await collector(quiet, { listProcesses: async () => onlyP2() }).snapshot({ now: NOW });
+      [run] = snapshot.processes[0].workflows;
+      assert.equal(run.state, 'running');
+      assert.deepEqual(run.agents, []);
+    } finally {
+      fs.rmSync(quiet, { recursive: true, force: true });
+    }
   } finally {
     fs.rmSync(configDir, { recursive: true, force: true });
   }

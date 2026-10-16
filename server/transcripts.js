@@ -240,7 +240,51 @@ export function promptText(entry) {
   return text ? singleLine(text, 140) : null;
 }
 
-const NOTIFICATION_BLOCK = /<task-notification>([\s\S]*?)(?:<\/task-notification>|$)/g;
+/**
+ * Reads a workflow run's `journal.jsonl`: a `started` record names each agent
+ * (with the label and phase the script gave it), and a later `result` or
+ * `failed` record settles it. Returns a Map of agent id to
+ * `{ label, phase, status, at }`, where status is running, completed or failed.
+ */
+export function readWorkflowJournal(file) {
+  const agents = new Map();
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return agents;
+  }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      // The run appends while this reads, so the last line can be partial.
+      continue;
+    }
+    const id = typeof entry?.agentId === 'string' ? entry.agentId : null;
+    if (!id) continue;
+    if (entry.type === 'started') {
+      agents.set(id, {
+        label: typeof entry.label === 'string' ? entry.label : null,
+        phase: typeof entry.phase === 'string' ? entry.phase : null,
+        status: 'running',
+        at: null,
+      });
+      continue;
+    }
+    const agent = agents.get(id);
+    if (!agent) continue;
+    if (entry.type === 'result') agent.status = 'completed';
+    else if (entry.type === 'failed') agent.status = 'failed';
+    else continue;
+    agent.at = parseTime(entry.timestamp);
+  }
+  return agents;
+}
+
+const NOTIFICATION_BLOCK =/<task-notification>([\s\S]*?)(?:<\/task-notification>|$)/g;
 
 function tag(block, name) {
   const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(block);

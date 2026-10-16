@@ -13,6 +13,7 @@ import {
   promptText,
   readFirstEntry,
   readThreadState,
+  readWorkflowJournal,
 } from './transcripts.js';
 
 // An agent belongs to the newest live process of its session that had started by then.
@@ -20,6 +21,8 @@ const OWNER_TOLERANCE_MS = 1500;
 // A notification counts as final unless the agent wrote to its transcript after it.
 const NOTIFICATION_TOLERANCE_MS = 2000;
 const FINISHED_LIMIT = 20;
+// A workflow with no agent running is between phases until it has been quiet this long.
+const WORKFLOW_GAP_MS = 60 * 1000;
 const CACHE_IDLE_MS = 10 * 60 * 1000;
 // Command lines of a cloudcli server, for when the monitor is not its child.
 const HOST_MARKER = /claude-code-ui|cloudcli|claudecodeui|dist-server[\\/]server[\\/]index\.js/i;
@@ -67,6 +70,15 @@ function readJson(file) {
   }
 }
 
+/** The newest of `owners` (sorted by start) that had started by `startedAt`. */
+function ownerAt(sortedOwners, startedAt) {
+  let owner = null;
+  for (const proc of sortedOwners) {
+    if (proc.startedAt <= startedAt + OWNER_TOLERANCE_MS) owner = proc;
+  }
+  return owner;
+}
+
 /**
  * Turns the agents of one session into records attributed to the live
  * process that runs them, with their state resolved.
@@ -74,14 +86,7 @@ function readJson(file) {
 export function resolveAgents(rawAgents, owners, notifications) {
   const byId = new Map(rawAgents.map((agent) => [agent.id, agent]));
   const sortedOwners = [...owners].sort((a, b) => a.startedAt - b.startedAt);
-
-  const ownerByTime = (startedAt) => {
-    let owner = null;
-    for (const proc of sortedOwners) {
-      if (proc.startedAt <= startedAt + OWNER_TOLERANCE_MS) owner = proc;
-    }
-    return owner;
-  };
+  const ownerByTime = (startedAt) => ownerAt(sortedOwners, startedAt);
 
   // Nested agents run in the same process as their root ancestor.
   const ownerOf = (agent, depth = 0) => {
@@ -126,6 +131,82 @@ export function resolveAgents(rawAgents, owners, notifications) {
   return records;
 }
 
+/**
+ * Turns the workflow runs of one session into records attributed to the live
+ * process that runs them. An agent is settled by the run's journal, by its own
+ * transcript ending, or by the run's task notification; a run is running while
+ * any agent is, or briefly between phases until the run reports its end.
+ */
+export function resolveWorkflows(rawRuns, owners, notifications, now) {
+  const sortedOwners = [...owners].sort((a, b) => a.startedAt - b.startedAt);
+  const records = [];
+  for (const run of rawRuns) {
+    if (!run.agents.length) continue;
+    const startedAt = Math.min(...run.agents.map((agent) => agent.startedAt));
+    const owner = ownerAt(sortedOwners, startedAt);
+    if (!owner) continue;
+    const lastActivityAt = Math.max(...run.agents.map((agent) => agent.lastActivityAt));
+
+    const note = notifications.get(run.taskId) ?? notifications.get(run.runId);
+    let ended = null;
+    if (note && (note.at ?? 0) >= lastActivityAt - NOTIFICATION_TOLERANCE_MS) {
+      ended = { state: NOTIFICATION_STATE[note.status] ?? 'stopped', at: note.at };
+    } else if (run.snapshot && NOTIFICATION_STATE[run.snapshot.status] && (run.snapshot.at ?? 0) >= startedAt) {
+      ended = { state: NOTIFICATION_STATE[run.snapshot.status], at: run.snapshot.at };
+    }
+
+    const agents = run.agents.map((agent) => {
+      let state = 'running';
+      let endedAt = null;
+      if (agent.journal?.status === 'completed' || agent.journal?.status === 'failed') {
+        state = agent.journal.status;
+        endedAt = agent.journal.at ?? agent.lastActivityAt;
+      } else if (agent.thread.state === 'done') {
+        state = OUTCOME_STATE[agent.thread.outcome] ?? 'completed';
+        endedAt = agent.thread.at ?? agent.lastActivityAt;
+      } else if (ended) {
+        state = ended.state === 'completed' ? 'stopped' : ended.state;
+        endedAt = ended.at ?? agent.lastActivityAt;
+      }
+      return {
+        id: agent.id,
+        description: agent.journal?.label || agent.description,
+        phase: agent.journal?.phase ?? null,
+        agentType: agent.agentType,
+        model: agent.model,
+        startedAt: agent.startedAt,
+        lastActivityAt: agent.lastActivityAt,
+        state,
+        endedAt,
+        activity: state === 'running' ? agent.thread.activity ?? null : null,
+      };
+    });
+
+    const finished = agents.filter((agent) => agent.state !== 'running');
+    let state = 'running';
+    let endedAt = null;
+    // The run's own report ends it; without one, every agent must have settled and the run gone quiet.
+    const settled = finished.length === agents.length && !(run.journalPending > 0);
+    if (ended || (settled && now - lastActivityAt > WORKFLOW_GAP_MS)) {
+      state = ended?.state ?? (finished.some((agent) => agent.state === 'failed') ? 'failed' : 'completed');
+      endedAt = ended?.at ?? Math.max(...finished.map((agent) => agent.endedAt ?? agent.lastActivityAt));
+    }
+    records.push({
+      ownerPid: owner.pid,
+      runId: run.runId,
+      name: run.name,
+      state,
+      startedAt,
+      lastActivityAt,
+      endedAt,
+      agentCount: Math.max(run.journalCount ?? 0, agents.length),
+      finishedCount: finished.length,
+      agents,
+    });
+  }
+  return records;
+}
+
 export function createCollector(options = {}) {
   const deps = {
     listProcesses: procs.listProcesses,
@@ -139,7 +220,8 @@ export function createCollector(options = {}) {
   };
   const projectsDir = path.join(deps.configDir, 'projects');
   const index = new TranscriptIndex();
-  const caches = { thread: new Map(), head: new Map(), meta: new Map() };
+  const caches = { thread: new Map(), head: new Map(), meta: new Map(), journal: new Map() };
+  const workflowNames = new Map();
   const transcriptPaths = new Map();
 
   // Memoizes `compute` per file until `version` changes.
@@ -172,8 +254,52 @@ export function createCollector(options = {}) {
     return found;
   };
 
-  const readAgents = (transcript, earliestStart, now) => {
-    const dir = path.join(transcript.slice(0, -'.jsonl'.length), 'subagents');
+  // One agent transcript in `dir`, or null if it cannot be running in a live process.
+  const readAgentFile = (dir, id, earliestStart, now) => {
+    const file = path.join(dir, `agent-${id}.jsonl`);
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      return null;
+    }
+    // Untouched since before every live process started: cannot be running in one.
+    if (stat.mtimeMs < earliestStart - OWNER_TOLERANCE_MS) return null;
+
+    const metaFile = path.join(dir, `agent-${id}.meta.json`);
+    let metaVersion = 'missing';
+    try {
+      metaVersion = fs.statSync(metaFile).mtimeMs;
+    } catch {
+      // Older Claude Code versions, and workflow agents, may write no meta file.
+    }
+    const meta = memo(caches.meta, metaFile, metaVersion, () => readJson(metaFile), now) || {};
+    const head = memo(caches.head, file, stat.ino, () => {
+      const first = readFirstEntry(file);
+      return { startedAt: parseTime(first?.timestamp), prompt: promptText(first) };
+    }, now);
+    const thread = memo(caches.thread, file, `${stat.size}:${stat.mtimeMs}`, () => readThreadState(file), now);
+    const notes = index.update(file, now);
+
+    return {
+      notes,
+      agent: {
+        id,
+        description: (typeof meta.description === 'string' && meta.description) || head.prompt || id,
+        agentType: typeof meta.agentType === 'string' ? meta.agentType : null,
+        shape: typeof meta.requestShape === 'string' ? meta.requestShape : null,
+        depth: Number.isInteger(meta.spawnDepth) ? meta.spawnDepth : meta.parentAgentId ? 2 : 1,
+        parentId: typeof meta.parentAgentId === 'string' ? meta.parentAgentId : null,
+        model: typeof meta.model === 'string' ? meta.model : null,
+        startedAt: head.startedAt ?? (stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs),
+        lastActivityAt: stat.mtimeMs,
+        thread,
+      },
+    };
+  };
+
+  // Agent transcripts in `dir`, named agent-<id>.jsonl.
+  const readAgentDir = (dir, earliestStart, now) => {
     let names;
     try {
       names = fs.readdirSync(dir);
@@ -185,47 +311,82 @@ export function createCollector(options = {}) {
     for (const name of names) {
       const match = /^agent-(.+)\.jsonl$/.exec(name);
       if (!match) continue;
-      const file = path.join(dir, name);
-      let stat;
-      try {
-        stat = fs.statSync(file);
-      } catch {
-        continue;
-      }
-      // Untouched since before every live process started: cannot be running in one.
-      if (stat.mtimeMs < earliestStart - OWNER_TOLERANCE_MS) continue;
-
-      const id = match[1];
-      const metaFile = path.join(dir, `agent-${id}.meta.json`);
-      let metaVersion = 'missing';
-      try {
-        metaVersion = fs.statSync(metaFile).mtimeMs;
-      } catch {
-        // Older Claude Code versions write no meta file.
-      }
-      const meta = memo(caches.meta, metaFile, metaVersion, () => readJson(metaFile), now) || {};
-      const head = memo(caches.head, file, stat.ino, () => {
-        const first = readFirstEntry(file);
-        return { startedAt: parseTime(first?.timestamp), prompt: promptText(first) };
-      }, now);
-      const thread = memo(caches.thread, file, `${stat.size}:${stat.mtimeMs}`, () => readThreadState(file), now);
-      const notes = index.update(file, now);
-      if (notes) notificationStates.push(notes);
-
-      agents.push({
-        id,
-        description: (typeof meta.description === 'string' && meta.description) || head.prompt || id,
-        agentType: typeof meta.agentType === 'string' ? meta.agentType : null,
-        shape: typeof meta.requestShape === 'string' ? meta.requestShape : null,
-        depth: Number.isInteger(meta.spawnDepth) ? meta.spawnDepth : meta.parentAgentId ? 2 : 1,
-        parentId: typeof meta.parentAgentId === 'string' ? meta.parentAgentId : null,
-        model: typeof meta.model === 'string' ? meta.model : null,
-        startedAt: head.startedAt ?? (stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs),
-        lastActivityAt: stat.mtimeMs,
-        thread,
-      });
+      const read = readAgentFile(dir, match[1], earliestStart, now);
+      if (!read) continue;
+      agents.push(read.agent);
+      if (read.notes) notificationStates.push(read.notes);
     }
     return { agents, notificationStates };
+  };
+
+  const readAgents = (transcript, earliestStart, now) =>
+    readAgentDir(path.join(transcript.slice(0, -'.jsonl'.length), 'subagents'), earliestStart, now);
+
+  // A run's name: from its snapshot, or from its script, saved as <name>-<runId>.js.
+  const workflowName = (sessionDir, runId, snapshot) => {
+    if (typeof snapshot?.workflowName === 'string' && snapshot.workflowName) return snapshot.workflowName;
+    if (workflowNames.has(runId)) return workflowNames.get(runId);
+    let script = null;
+    try {
+      script = fs.readdirSync(path.join(sessionDir, 'workflows', 'scripts')).find((name) => name.endsWith(`-${runId}.js`));
+    } catch {
+      // No scripts folder.
+    }
+    if (!script) return runId;
+    const name = script.slice(0, -`-${runId}.js`.length) || runId;
+    workflowNames.set(runId, name);
+    return name;
+  };
+
+  // Workflow runs, whose agents write to <session>/subagents/workflows/<runId>/.
+  const readWorkflows = (transcript, earliestStart, now) => {
+    const sessionDir = transcript.slice(0, -'.jsonl'.length);
+    const runsDir = path.join(sessionDir, 'subagents', 'workflows');
+    let runIds;
+    try {
+      runIds = fs.readdirSync(runsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      return { runs: [], notificationStates: [] };
+    }
+    const runs = [];
+    const notificationStates = [];
+    for (const runId of runIds) {
+      const dir = path.join(runsDir, runId);
+      const { agents, notificationStates: notes } = readAgentDir(dir, earliestStart, now);
+      if (!agents.length) continue;
+      notificationStates.push(...notes);
+
+      const journalFile = path.join(dir, 'journal.jsonl');
+      let journalVersion = 'missing';
+      try {
+        const stat = fs.statSync(journalFile);
+        journalVersion = `${stat.size}:${stat.mtimeMs}`;
+      } catch {
+        // Not written yet.
+      }
+      const journal = memo(caches.journal, journalFile, journalVersion, () => readWorkflowJournal(journalFile), now);
+
+      const snapshotFile = path.join(sessionDir, 'workflows', `${runId}.json`);
+      let snapshotVersion = 'missing';
+      try {
+        snapshotVersion = fs.statSync(snapshotFile).mtimeMs;
+      } catch {
+        // Written when the run ends, if at all.
+      }
+      const snapshot = memo(caches.meta, snapshotFile, snapshotVersion, () => readJson(snapshotFile), now);
+
+      runs.push({
+        runId,
+        taskId: typeof snapshot?.taskId === 'string' ? snapshot.taskId : runId,
+        name: workflowName(sessionDir, runId, snapshot),
+        snapshot: snapshot && typeof snapshot.status === 'string' ? { status: snapshot.status, at: parseTime(snapshot.timestamp) } : null,
+        journalCount: journal.size,
+        // Started in the journal but no transcript yet: running, about to write one.
+        journalPending: [...journal].filter(([id, entry]) => entry.status === 'running' && !agents.some((agent) => agent.id === id)).length,
+        agents: agents.map((agent) => ({ ...agent, journal: journal.get(agent.id) ?? null })),
+      });
+    }
+    return { runs, notificationStates };
   };
 
   async function snapshot({ includeFinished = false, now = Date.now() } = {}) {
@@ -269,6 +430,7 @@ export function createCollector(options = {}) {
       const info = transcript ? index.update(transcript, now) : null;
       let thread = { state: 'unknown' };
       let agents = [];
+      let workflows = [];
       if (transcript) {
         let stat = null;
         try {
@@ -283,8 +445,10 @@ export function createCollector(options = {}) {
         if (owners.length) {
           const earliest = Math.min(...owners.map((proc) => proc.startedAt));
           const { agents: rawAgents, notificationStates } = readAgents(transcript, earliest, now);
-          const notifications = mergeNotifications([info, ...notificationStates]);
+          const { runs, notificationStates: runNotes } = readWorkflows(transcript, earliest, now);
+          const notifications = mergeNotifications([info, ...notificationStates, ...runNotes]);
           agents = resolveAgents(rawAgents, owners, notifications);
+          workflows = resolveWorkflows(runs, owners, notifications, now);
         }
       }
 
@@ -294,6 +458,10 @@ export function createCollector(options = {}) {
         const owned = agents.filter((agent) => agent.ownerPid === proc.pid);
         const running = owned.filter((agent) => agent.state === 'running').sort((a, b) => a.startedAt - b.startedAt);
         const finished = owned.filter((agent) => agent.state !== 'running').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+        const ownedRuns = workflows.filter((run) => run.ownerPid === proc.pid);
+        const runningRuns = ownedRuns.filter((run) => run.state === 'running').sort((a, b) => a.startedAt - b.startedAt);
+        const finishedRuns = ownedRuns.filter((run) => run.state !== 'running').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+        const runningRunAgents = runningRuns.flatMap((run) => run.agents.filter((agent) => agent.state === 'running'));
         // An older process of the same session was superseded by a newer turn.
         const turn = entry === newest ? thread : { state: 'done', outcome: 'superseded', at: null };
 
@@ -301,7 +469,7 @@ export function createCollector(options = {}) {
         // anything else was started in the background.
         const waiting = [
           ...(turn.state === 'active' ? pendingCommands(turn.activity).map((key) => ({ key, agentId: null })) : []),
-          ...running.flatMap((agent) => pendingCommands(agent.activity).map((key) => ({ key, agentId: agent.id }))),
+          ...[...running, ...runningRunAgents].flatMap((agent) => pendingCommands(agent.activity).map((key) => ({ key, agentId: agent.id }))),
         ];
         const shells = (shellsByOwner.get(proc.pid) || []).map((shell) => {
           const command = procs.extractShellCommand(shell.args);
@@ -321,7 +489,7 @@ export function createCollector(options = {}) {
 
         let status = 'idle';
         if (turn.state === 'active') status = 'working';
-        else if (running.length || shells.length) status = 'background';
+        else if (running.length || runningRuns.length || shells.length) status = 'background';
 
         output.push({
           pid: proc.pid,
@@ -342,6 +510,8 @@ export function createCollector(options = {}) {
           agents: running.map((agent) => ({ ...agent, activity: publicActivity(agent.activity) })),
           finishedAgents: includeFinished ? finished.slice(0, FINISHED_LIMIT) : [],
           finishedCount: finished.length,
+          workflows: [...runningRuns, ...(includeFinished ? finishedRuns.slice(0, FINISHED_LIMIT) : [])].map((run) => publicRun(run, includeFinished)),
+          finishedWorkflowCount: finishedRuns.length,
           shells,
         });
       }
@@ -360,6 +530,15 @@ export function createCollector(options = {}) {
   return { snapshot, deps };
 }
 
+/** A workflow run as sent to the UI: finished agents only when asked for. */
+function publicRun({ ownerPid, agents, ...run }, includeFinished) {
+  const shown = agents
+    .filter((agent) => includeFinished || agent.state === 'running')
+    .sort((a, b) => (a.state === 'running') - (b.state === 'running') || a.startedAt - b.startedAt)
+    .map((agent) => ({ ...agent, activity: publicActivity(agent.activity) }));
+  return { ...run, agents: shown };
+}
+
 function mergeNotifications(states) {
   const merged = new Map();
   for (const state of states) {
@@ -373,7 +552,7 @@ function mergeNotifications(states) {
 }
 
 function emptySummary() {
-  return { processes: 0, background: 0, working: 0, runningAgents: 0, shells: 0 };
+  return { processes: 0, background: 0, working: 0, runningAgents: 0, workflows: 0, shells: 0 };
 }
 
 function summarize(processes) {
@@ -382,7 +561,9 @@ function summarize(processes) {
     summary.processes += 1;
     if (proc.status === 'background') summary.background += 1;
     if (proc.status === 'working') summary.working += 1;
-    summary.runningAgents += proc.agents.length;
+    const runningRuns = proc.workflows.filter((run) => run.state === 'running');
+    summary.runningAgents += proc.agents.length + runningRuns.reduce((sum, run) => sum + run.agents.filter((agent) => agent.state === 'running').length, 0);
+    summary.workflows += runningRuns.length;
     summary.shells += proc.shells.length;
   }
   return summary;

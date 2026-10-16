@@ -18,6 +18,7 @@ const STRINGS = {
     chipProcesses: 'Processes',
     chipBackground: 'In background',
     chipAgents: 'Agents running',
+    chipWorkflows: 'Workflows',
     chipShells: 'Shells',
     status: { working: 'Working', background: 'Background', idle: 'Idle' },
     statusHint: {
@@ -33,11 +34,14 @@ const STRINGS = {
     unknownSession: 'Unknown session',
     noTranscript: 'No transcript found for this session.',
     agents: 'Agents',
+    workflows: 'Workflows',
+    workflowAgents: (done, total) => `${done} of ${total} agents finished`,
     shells: 'Shells',
     runningCount: (n) => `${n} running`,
     finishedCount: (n) => `${n} finished`,
     noRunningAgents: 'No agents running.',
     moreFinished: (n) => `${n} more finished`,
+    moreFinishedWorkflows: (n) => `${n} more finished workflows`,
     state: {
       running: 'Running',
       completed: 'Completed',
@@ -86,6 +90,7 @@ const STRINGS = {
     chipProcesses: '프로세스',
     chipBackground: '백그라운드',
     chipAgents: '실행 중 에이전트',
+    chipWorkflows: '워크플로',
     chipShells: '셸',
     status: { working: '작업 중', background: '백그라운드', idle: '대기' },
     statusHint: {
@@ -101,11 +106,14 @@ const STRINGS = {
     unknownSession: '세션을 알 수 없음',
     noTranscript: '이 세션의 대화 기록을 찾지 못했습니다.',
     agents: '에이전트',
+    workflows: '워크플로',
+    workflowAgents: (done, total) => `에이전트 ${total}개 중 ${done}개 완료`,
     shells: '셸',
     runningCount: (n) => `${n}개 실행 중`,
     finishedCount: (n) => `${n}개 종료`,
     noRunningAgents: '실행 중인 에이전트가 없습니다.',
     moreFinished: (n) => `끝난 에이전트 ${n}개 더 있음`,
+    moreFinishedWorkflows: (n) => `끝난 워크플로 ${n}개 더 있음`,
     state: {
       running: '실행 중',
       completed: '완료',
@@ -272,15 +280,15 @@ const STYLE = `
 .am-now { margin-top: 6px; flex-wrap: nowrap; }
 .am-label { flex: none; font-size: 11px; color: hsl(var(--am-muted)); text-transform: uppercase; letter-spacing: 0.04em; }
 .am-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; margin: 7px 1px 0; background: hsl(var(--am-muted) / 0.5); }
-.am-state-running .am-dot, .am-dot-shell { background: hsl(var(--am-success)); box-shadow: 0 0 0 0 hsl(var(--am-success)); animation: am-pulse 1.8s ease-out infinite; }
-.am-state-completed .am-dot { background: hsl(var(--am-muted) / 0.5); }
-.am-state-failed .am-dot { background: hsl(var(--am-danger)); }
-.am-state-interrupted .am-dot, .am-state-killed .am-dot, .am-state-stopped .am-dot { background: hsl(var(--am-warning)); }
-.am-state-done .am-desc { color: hsl(var(--am-muted)); font-weight: 400; }
+.am-state-running > .am-dot, .am-dot-shell { background: hsl(var(--am-success)); box-shadow: 0 0 0 0 hsl(var(--am-success)); animation: am-pulse 1.8s ease-out infinite; }
+.am-state-completed > .am-dot { background: hsl(var(--am-muted) / 0.5); }
+.am-state-failed > .am-dot { background: hsl(var(--am-danger)); }
+.am-state-interrupted > .am-dot, .am-state-killed > .am-dot, .am-state-stopped > .am-dot { background: hsl(var(--am-warning)); }
+.am-state-done > .am-item-body > .am-line > .am-desc { color: hsl(var(--am-muted)); font-weight: 400; }
 .am-children { border-left: 1px solid hsl(var(--am-border)); margin-left: 3px; padding-left: 12px; }
 @keyframes am-pulse { 0% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0.45); } 70% { box-shadow: 0 0 0 5px hsl(var(--am-success) / 0); } 100% { box-shadow: 0 0 0 0 hsl(var(--am-success) / 0); } }
 @keyframes am-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .am-state-running .am-dot, .am-dot-shell, .am-refreshing .am-btn-icon svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .am-state-running > .am-dot, .am-dot-shell, .am-refreshing .am-btn-icon svg { animation: none; } }
 `;
 
 // Lucide icons, drawn inline so the tab makes no requests of its own. ACTIVITY_ICON matches icon.svg.
@@ -374,6 +382,7 @@ function agentItem(view, agent, children, shownIds, cwd) {
     const cls = agent.shape === 'background' ? 'am-tag am-tag-bg' : 'am-tag';
     tags.push(`<span class="${cls}">${escapeHtml(t.shape[agent.shape] ?? agent.shape)}</span>`);
   }
+  if (agent.phase) tags.push(`<span class="am-tag">${escapeHtml(agent.phase)}</span>`);
   // The default type adds nothing; name only the specialised ones.
   if (agent.agentType && agent.agentType !== 'general-purpose') tags.push(`<span class="am-tag">${escapeHtml(agent.agentType)}</span>`);
   if (agent.model) tags.push(`<span class="am-tag">${escapeHtml(agent.model)}</span>`);
@@ -434,6 +443,25 @@ function agentTree(view, agents, cwd) {
   return roots.map(renderAgent).join('');
 }
 
+function workflowItem(view, run, cwd) {
+  const { t, now } = view;
+  const running = run.state === 'running';
+  const timing = [`<span>${escapeHtml(t.started(duration(now - run.startedAt, t)))}</span>`];
+  if (running) timing.push(`<span>${escapeHtml(t.lastActivity(duration(now - run.lastActivityAt, t)))}</span>`);
+  else timing.push(`<span>${escapeHtml(t.state[run.state] ?? run.state)}</span>`, `<span>${escapeHtml(t.ended(duration(now - (run.endedAt ?? run.lastActivityAt), t)))}</span>`);
+  const agents = run.agents.map((agent) => agentItem(view, agent, '', new Set(), cwd)).join('');
+  const stateClass = running ? 'am-state-running' : `am-state-done am-state-${escapeHtml(run.state)}`;
+  return `
+    <li class="am-item ${stateClass}">
+      <span class="am-dot" title="${escapeHtml(t.state[run.state] ?? run.state)}"></span>
+      <div class="am-item-body">
+        <div class="am-line"><span class="am-desc">${escapeHtml(run.name)}</span><span class="am-sub">${escapeHtml(t.workflowAgents(run.finishedCount, run.agentCount))}</span></div>
+        <div class="am-line am-sub">${timing.join('')}</div>
+        ${agents ? `<ul class="am-list am-children">${agents}</ul>` : ''}
+      </div>
+    </li>`;
+}
+
 function shellItem(view, shell, agentNames) {
   const { t, now } = view;
   const owner = shell.agentId ? agentNames.get(shell.agentId) : null;
@@ -488,7 +516,23 @@ function processCard(view, proc, home) {
         </div>`
       : '';
 
-  const agentNames = new Map(proc.agents.map((agent) => [agent.id, agent.description]));
+  const workflows = proc.workflows ?? [];
+  const runningRuns = workflows.filter((run) => run.state === 'running');
+  const hiddenRuns = state.showFinished ? (proc.finishedWorkflowCount ?? 0) - (workflows.length - runningRuns.length) : 0;
+  const runCounts = [`<span>${escapeHtml(t.runningCount(runningRuns.length))}</span>`];
+  if (proc.finishedWorkflowCount) runCounts.push(`<span>${escapeHtml(t.finishedCount(proc.finishedWorkflowCount))}</span>`);
+  const workflowSection = workflows.length
+    ? `<div class="am-section">
+        <div class="am-section-title">${escapeHtml(t.workflows)} ${runCounts.join('')}</div>
+        <ul class="am-list">${workflows.map((run) => workflowItem(view, run, proc.cwd)).join('')}</ul>
+        ${hiddenRuns > 0 ? `<div class="am-hint">${escapeHtml(t.moreFinishedWorkflows(hiddenRuns))}</div>` : ''}
+      </div>`
+    : '';
+
+  const agentNames = new Map([
+    ...proc.agents.map((agent) => [agent.id, agent.description]),
+    ...workflows.flatMap((run) => run.agents.map((agent) => [agent.id, agent.description])),
+  ]);
   const shellSection = proc.shells.length
     ? `<div class="am-section">
         <div class="am-section-title">${escapeHtml(t.shells)} <span>${escapeHtml(t.runningCount(proc.shells.length))}</span></div>
@@ -515,6 +559,7 @@ function processCard(view, proc, home) {
       ${proc.lastPrompt && proc.title ? `<div class="am-prompt" title="${escapeHtml(proc.lastPrompt)}"><b>${escapeHtml(t.lastPrompt)}</b>${escapeHtml(clip(proc.lastPrompt, 300))}</div>` : ''}
       ${proc.sessionId && !proc.transcriptFound ? `<div class="am-warn">${escapeHtml(t.noTranscript)}</div>` : ''}
       ${agentSection}
+      ${workflowSection}
       ${shellSection}
     </section>`;
 }
@@ -551,6 +596,7 @@ function render(view) {
         <span class="am-stat">${escapeHtml(t.chipProcesses)}<b>${s.processes}</b></span>
         <span class="am-stat ${s.background ? 'am-stat-hot' : ''}">${escapeHtml(t.chipBackground)}<b>${s.background}</b></span>
         <span class="am-stat">${escapeHtml(t.chipAgents)}<b>${s.runningAgents}</b></span>
+        ${s.workflows ? `<span class="am-stat">${escapeHtml(t.chipWorkflows)}<b>${s.workflows}</b></span>` : ''}
         <span class="am-stat">${escapeHtml(t.chipShells)}<b>${s.shells}</b></span>
         ${state.fetchedAt ? `<span class="am-updated">${escapeHtml(t.updated(duration(view.now - state.fetchedAt, t)))}</span>` : ''}
       </div>`);

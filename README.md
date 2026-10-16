@@ -32,8 +32,9 @@ The screenshots show a staged demo in a real CloudCLI 1.37.3; [dev/demo](dev/dem
 ## Features
 
 - **Every running Claude Code process**, whether CloudCLI started it or it runs in a terminal or an IDE, with its session title, project, PID, uptime, CPU and memory.
-- **A clear status** for each one: *Working* while a turn is in progress, *Background* when the turn has ended but agents or shells are still running, *Idle* when nothing is running.
+- **A clear status** for each one: *Working* while a turn is in progress, *Background* when the turn has ended but agents, workflows or shells are still running, *Idle* when nothing is running.
 - **Subagents**, nested under the agent that started them, with their current tool call, start time and last activity. Finished agents are one checkbox away.
+- **Workflows** started with the Workflow tool, with how many of their agents have finished and the agents still running, each with its label, phase and current tool call.
 - **Shells** that Bash tool calls are running, marked as background work or as the tool call a thread is waiting on.
 - **Stop buttons** for a process or a single shell, with a second click to confirm.
 - Refreshes every 4 seconds while the tab is visible. Follows CloudCLI's light or dark theme, using the host's colour variables, fonts and corner radius, and its language setting (English and Korean so far; other languages show English).
@@ -69,13 +70,13 @@ Tested with CloudCLI UI 1.37.3 and Claude Code 2.1.280 on macOS 26.3 (Node.js 22
 | You see | It means |
 | --- | --- |
 | **Working** | A turn is in progress: Claude is generating, or waiting on a tool call. |
-| **Background** | The turn has ended, but subagents or shells are still running. This is the case CloudCLI does not show. |
+| **Background** | The turn has ended, but subagents, workflows or shells are still running. This is the case CloudCLI does not show. |
 | **Idle** | The process is alive but nothing Agent Monitor can see runs in it. A terminal session waiting for input looks like this, and so does a CloudCLI process kept open for a scheduled wake-up. |
 | *quiet for 12m* | A running agent has written nothing for that long (shown after 5 minutes). It may be waiting on a long command, or it may be stuck. |
 | *current tool call* | A shell whose command a thread is waiting on. *tool call of X* means agent X is waiting on it. |
 | *background* (shell) | A shell started in the background, such as a dev server or a long test run. |
 
-Agents end as *Completed*, *Failed* (an API error), *Interrupted* or *Stopped*. Turn on **Show finished agents** to list the ones that ended while the current process was running (up to 20 per process).
+Agents end as *Completed*, *Failed* (an API error), *Interrupted* or *Stopped*. Turn on **Show finished agents** to list the ones that ended while the current process was running (up to 20 per process), along with finished workflows and the finished agents of running ones.
 
 When CloudCLI runs a new turn while an older process is still finishing background work, both processes are listed, each with its own agents and shells.
 
@@ -103,9 +104,11 @@ flowchart LR
 | Session id, project and entry point | `~/.claude/sessions/<pid>.json`, which Claude Code writes for each running process |
 | Session title, last prompt and turn state | the session transcript, `~/.claude/projects/<project>/<session>.jsonl` |
 | Subagents | `<session>/subagents/agent-<id>.jsonl` and `agent-<id>.meta.json` |
+| Workflows and their agents | `<session>/subagents/workflows/<run>/`, with an `agent-<id>.jsonl` per agent and the run's `journal.jsonl`; the name from `<session>/workflows/<run>.json` or the script in `<session>/workflows/scripts/` |
 | Background agents that have finished | the task notifications Claude Code records in the transcripts |
 
 - An agent counts as finished when its transcript ends with a final answer, an API error or an interruption, or when Claude Code has queued a task notification for it and the agent has written nothing since. Only entries that Claude Code writes for notifications count, so notification text quoted inside a conversation is never mistaken for one.
+- A workflow agent counts as finished when the run's journal records its result or failure, or when its transcript ends. A workflow is running while any of its agents is, and between phases until its task notification arrives or it has been quiet for a minute.
 - CloudCLI runs each turn in a new Claude process. An agent belongs to the newest process that was already running when the agent started, and nested agents follow their root agent.
 - A shell counts as a tool call when its command matches a Bash call that the main thread or an agent is still waiting on. Any other shell is background work.
 - Transcripts are read incrementally. The first look at a large transcript reads it once; later refreshes read only what was appended. On macOS with a 25 MB transcript, the first refresh took about 120 ms and later ones about 40 ms.

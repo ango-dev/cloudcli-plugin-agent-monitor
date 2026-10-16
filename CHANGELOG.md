@@ -4,6 +4,14 @@ Notable changes to Agent Monitor. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Workflows started with the Workflow tool, under each process: the run's name, how many of its agents have finished, and its running agents with their label, phase and current tool call. A session whose turn has ended while a workflow runs is now *Background* instead of *Idle*, workflow agents count in *Agents running*, and their shells show as their tool calls.
+
+### Fixed
+
+- A finished agent nested under a running one no longer pulses as if it were running.
+
 ### Changed
 
 - The tab takes its colours, fonts (Geist and Geist Mono) and corner radius from the CloudCLI host's theme variables, with built-in fallbacks for hosts that lack them. Status colours were retuned to sit on those backgrounds in both themes.

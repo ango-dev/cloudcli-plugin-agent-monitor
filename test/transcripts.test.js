@@ -12,6 +12,7 @@ import {
   projectDirName,
   readFirstEntry,
   readThreadState,
+  readWorkflowJournal,
   scanBackward,
 } from '../server/transcripts.js';
 
@@ -240,4 +241,24 @@ test('projectDirName and findTranscript', () => {
   assert.equal(findTranscript(projects, sessionId, '/work/a'), path.join(projects, 'elsewhere', `${sessionId}.jsonl`));
   assert.equal(findTranscript(projects, 'nope', '/work/a'), null);
   assert.equal(findTranscript(path.join(tmp, 'no-projects'), sessionId, null), null);
+});
+
+test('readWorkflowJournal settles agents and skips a line still being written', () => {
+  const file = writeJsonl(
+    [
+      { type: 'started', agentId: 'w1', label: 'draft:X1', phase: 'Draft' },
+      { type: 'started', agentId: 'w2', label: 'draft:X2' },
+      { type: 'started', agentId: 'w3' },
+      { type: 'result', agentId: 'w1', result: 'ok', timestamp: at(9) },
+      { type: 'failed', agentId: 'w2', error: 'boom' },
+      { type: 'result', agentId: 'unknown' },
+    ],
+    { trailing: '{"type":"result","agentId":"w3"' },
+  );
+  assert.deepEqual([...readWorkflowJournal(file)], [
+    ['w1', { label: 'draft:X1', phase: 'Draft', status: 'completed', at: Date.parse(at(9)) }],
+    ['w2', { label: 'draft:X2', phase: null, status: 'failed', at: null }],
+    ['w3', { label: null, phase: null, status: 'running', at: null }],
+  ]);
+  assert.equal(readWorkflowJournal(path.join(tmp, 'missing.jsonl')).size, 0);
 });
